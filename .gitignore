@@ -1,0 +1,39 @@
+# Environment secrets
+.env
+.env.*
+
+# Keep sample env file
+!.env.example
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Flask
+instance/
+.webassets-cache
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build files
+dist/
+build/
+*.egg-info/
