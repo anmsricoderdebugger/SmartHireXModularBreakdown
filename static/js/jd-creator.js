@@ -233,12 +233,42 @@ async function setEnhanceMode(mode) {
         }
     } else {
         const inputArea = document.getElementById('enhanceInputArea');
+        // inputArea.innerHTML = `
+        //     <textarea id="enhanceInstructions" rows="3" placeholder="Tell AI exactly what to change..."></textarea>
+        //     <button class="btn-primary" onclick="runEnhancement()">Enhance JD →</button>
+        //     <div id="enhanceLoading" class="loader" style="display:none;">
+        //         <div class="spinner"></div><span>Enhancing your JD...</span>
+        //     </div>`;
+        // inputArea.style.display = 'block';
+
         inputArea.innerHTML = `
-            <textarea id="enhanceInstructions" rows="3" placeholder="Tell AI exactly what to change..."></textarea>
-            <button class="btn-primary" onclick="runEnhancement()">Enhance JD →</button>
-            <div id="enhanceLoading" class="loader" style="display:none;">
-                <div class="spinner"></div><span>Enhancing your JD...</span>
-            </div>`;
+            <div class="enhance-input-wrapper">
+
+                <textarea
+                    id="enhanceInstructions"
+                    rows="5"
+                    placeholder="Tell AI exactly what to change..."
+                ></textarea>
+
+                <button
+                    class="btn-primary enhance-btn"
+                    onclick="runEnhancement()"
+                >
+                    Enhance JD →
+                </button>
+
+                <div
+                    id="enhanceLoading"
+                    class="loader"
+                    style="display:none;"
+                >
+                    <div class="spinner"></div>
+                    <span>Enhancing your JD...</span>
+                </div>
+
+            </div>
+        `;
+
         inputArea.style.display = 'block';
         document.getElementById('enhanceInstructions').focus();
     }

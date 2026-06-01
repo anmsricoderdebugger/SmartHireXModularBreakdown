@@ -236,7 +236,7 @@
 
             <!-- Enhance CTA -->
             <div class="enhance-cta">
-                <span>Want to enhance this JD?</span>
+                <span onclick="showEnhanceOptions()">Want to enhance this JD?</span>
                 <span class="enhance-arrow" onclick="showEnhanceOptions()">→</span>
             </div>
 
@@ -307,10 +307,50 @@
             </div>
         </div>
         <div class="field-group full-width" style="margin-top:15px;">
-            <label>Recruiter Notes (optional)</label>
+            <label>Hiring Manager Notes (optional)</label>
             <textarea id="cvScreeningNotes" rows="2" placeholder="e.g., Must have 5+ years in FinTech, prefer candidates from Tier-1 colleges..."></textarea>
         </div>
-        <button class="btn-primary" onclick="runCVScreeningManual()" style="margin-top:15px;">🔍 Screen Candidates</button>
+
+        
+
+        
+        <!-- <button class="btn-primary" onclick="runCVScreeningManual()" style="margin-top:15px;">🔍 Screen Candidates</button> -->
+
+        <div class="screen-action-row">
+            <button class="btn-primary" onclick="runCVScreeningManual()">
+                🔍 Screen Candidates
+            </button>
+
+            <button
+                id="manualWhatsappBtn"
+                class="btn-whatsapp"
+                onclick="toggleWhatsAppPanel('manual')"
+                style="display:none;"
+            >
+                📲 Send WhatsApp
+            </button>
+        </div>
+
+        <div id="manualWhatsappPanel" class="whatsapp-panel" style="display:none;">
+            <label>
+                Scoring
+                <span id="manualThresholdValue">70%</span>
+            </label>
+
+            <input
+                type="range"
+                id="manualScoreThreshold"
+                min="0"
+                max="100"
+                value="70"
+                oninput="updateWhatsAppThreshold(this.value, 'manual')"
+            >
+
+            <button class="btn-send-message" onclick="sendThresholdMessages('manual')">
+                Send Message
+            </button>
+        </div>
+
 
         <div id="cvScreeningResults" style="display:none;">
             <div id="cvResultsLoading" class="loader" style="display:none;">
@@ -318,7 +358,7 @@
                 <span>Screening candidates...</span>
             </div>
             <div id="cvResultsContainer"></div>
-            <button id="cvDownloadBtn" class="btn-secondary" style="display:none;" onclick="downloadCVReport()">📥 Download Audit Report (PDF)</button>
+            <button id="cvDownloadBtn" class="btn-download-report" style="display:none;" onclick="downloadCVReport()">📥 Download Report</button>
         </div>
     </section>
 
@@ -337,13 +377,94 @@
         </div>
 
         <div class="field-group full-width" style="margin-top:15px;">
-            <label>Recruiter Notes (optional)</label>
+            <label>Hiring Manager Notes (optional)</label>
             <textarea id="atsScreeningNotes" rows="2" placeholder="e.g., Must have 5+ years in FinTech..."></textarea>
         </div>
 
-        <button class="btn-primary" onclick="runCVScreeningATS()" style="margin-top:15px;">
+        
+
+        <!-- <button class="btn-primary" onclick="runCVScreeningATS()" style="margin-top:15px;">
             🔍 Fetch & Screen Candidates
-        </button>
+        </button> -->
+<!-- 
+        <div class="screen-action-row">
+            <button class="btn-primary" onclick="openATSChoiceModal()">
+                🔍 Fetch & Screen Candidates
+            </button>
+
+            <button
+                id="atsViewJDBtn"
+                class="btn-secondary"
+                onclick="openJDModal(currentATSJDHtml)"
+                style="display:none;"
+            >
+                👁️ View JD
+            </button>
+
+
+            <button
+                id="atsWhatsappBtn"
+                class="btn-whatsapp"
+                onclick="toggleWhatsAppPanel('ats')"
+                style="display:none;"
+            >
+                📲 Send WhatsApp
+            </button>
+        </div> --> 
+
+        
+        <div class="screen-action-row">
+            <button class="btn-primary action-btn" onclick="openATSChoiceModal()">
+                🔍 Fetch & Screen Candidates
+            </button>
+
+            <button id="atsViewJDBtn" class="action-btn" onclick="openJDModal(currentATSJDHtml)" style="display:none;">
+                👁️ View JD
+            </button>
+
+            <button id="atsWhatsappBtn" class="btn-whatsapp action-btn" onclick="toggleWhatsAppPanel('ats')" style="display:none;">
+                📲 Send WhatsApp
+            </button>
+
+        </div>
+        <div id="atsWhatsappPanel" class="whatsapp-panel" style="display:none;">
+            <label>
+                Scoring 
+                <span id="atsThresholdValue">70%</span>
+            </label>
+
+            <input
+                type="range"
+                id="atsScoreThreshold"
+                min="0"
+                max="100"
+                value="70"
+                oninput="updateWhatsAppThreshold(this.value, 'ats')"
+            >
+
+            <button class="btn-send-message" onclick="sendThresholdMessages('ats')">
+                Send Message
+            </button>
+        </div>
+
+
+        <div id="atsChoiceModal" class="ats-choice-modal" style="display:none;">
+            <div class="ats-choice-box">
+                <h3>Select Screening Type</h3>
+                <p>For which CVs do you want screening to perform?</p>
+
+                <div class="ats-choice-actions">
+                    <button class="btn-pipeline" onclick="startATSAfterChoice('pipeline')">
+                        Pipeline CVs
+                    </button>
+
+                    <button class="btn-all-cvs" onclick="startATSAfterChoice('all')">
+                        All CVs
+                    </button>
+                </div>
+            </div>
+        </div>
+
 
         <div id="jdModal" class="jd-modal">
             <div class="jd-modal-content">
@@ -352,12 +473,54 @@
             </div>
         </div>
 
+        <div id="smsConfirmModal" class="custom-confirm-modal" style="display:none;">
+
+            <div class="custom-confirm-box">
+
+                <h3>Threshold Warning</h3>
+
+                <p id="smsConfirmText"></p>
+
+                <div class="confirm-actions">
+
+                    <button class="confirm-cancel-btn"
+                        onclick="closeSMSConfirmModal()">
+                        Cancel
+                    </button>
+
+                    <button class="confirm-send-btn"
+                        id="confirmSMSProceedBtn">
+                        Send Anyway
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+        <!-- <div id="atsScreeningResults" style="display:none;">
+            <div id="atsResultsLoading" class="loader" style="display:none;">
+                <div class="spinner"></div>
+                <span>Fetching & Screening candidates...</span>
+            </div>
+            <div id="atsResultsContainer"></div> -->
+
         <div id="atsScreeningResults" style="display:none;">
             <div id="atsResultsLoading" class="loader" style="display:none;">
                 <div class="spinner"></div>
                 <span>Fetching & Screening candidates...</span>
             </div>
+
             <div id="atsResultsContainer"></div>
+
+            <button
+                id="atsDownloadBtn"
+                class="btn-download-report"
+                style="display:none;"
+                onclick="downloadATSReport()"
+            >
+                📥 Download Report
+            </button>
         </div>
     </section>
 

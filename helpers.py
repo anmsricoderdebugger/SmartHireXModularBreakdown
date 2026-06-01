@@ -4,11 +4,80 @@ import io
 import json
 import time
 import tempfile
+import pytesseract
 import subprocess
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 from docx import Document as DocxDocument
 from fpdf import FPDF
+from pdf2image import convert_from_bytes, convert_from_path
+
+def clean_cv_text(text):
+    if not text:
+        return ""
+
+    text = text.replace("\x00", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def is_text_low_quality(text):
+    if not text:
+        return True
+
+    text = clean_cv_text(text)
+    words = text.split()
+
+    if len(words) < 80:
+        return True
+
+    alpha_chars = sum(c.isalpha() for c in text)
+    alpha_ratio = alpha_chars / max(len(text), 1)
+
+    if alpha_ratio < 0.45:
+        return True
+
+    sections = ["experience", "education", "skills", "projects", "summary", "profile"]
+
+    found_sections = sum(
+        1 for section in sections
+        if section in text.lower()
+    )
+
+    return found_sections < 2
+
+
+def ocr_pdf_from_bytes(file_bytes, max_pages=3):
+    text = ""
+
+    images = convert_from_bytes(
+        file_bytes,
+        first_page=1,
+        last_page=max_pages,
+        dpi=200
+    )
+
+    for image in images:
+        text += pytesseract.image_to_string(image) + "\n"
+
+    return clean_cv_text(text)
+
+
+def ocr_pdf_from_path(file_path, max_pages=3):
+    text = ""
+
+    images = convert_from_path(
+        file_path,
+        first_page=1,
+        last_page=max_pages,
+        dpi=200
+    )
+
+    for image in images:
+        text += pytesseract.image_to_string(image) + "\n"
+
+    return clean_cv_text(text)
 
 
 def extract_text_from_file(file):
@@ -54,35 +123,94 @@ def extract_text_from_file(file):
         return ""
 
 
+# def extract_text_from_path(file_path):
+#     try:
+#         path = os.fspath(file_path)
+#         ext = os.path.splitext(path.lower())[1]
+
+#         if ext == ".pdf":
+#             reader = PdfReader(path)
+#             return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+#         if ext == ".docx":
+#             return extract_docx(path)
+
+#         if ext == ".doc":
+#             with open(path, "rb") as f:
+#                 file_bytes = f.read()
+
+#             tmpdir = os.path.dirname(path) or tempfile.gettempdir()
+#             return (
+#                 try_libreoffice(path, tmpdir)
+#                 or try_antiword(path)
+#                 or try_binary_doc(file_bytes)
+#             )
+
+#         print("❌ Unsupported file type:", path)
+#         return ""
+
+#     except Exception as e:
+#         print("❌ Extraction error:", e)
+#         return ""
+
+
 def extract_text_from_path(file_path):
     try:
         path = os.fspath(file_path)
         ext = os.path.splitext(path.lower())[1]
+        text = ""
 
         if ext == ".pdf":
             reader = PdfReader(path)
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            text = clean_cv_text(text)
+
+            if is_text_low_quality(text):
+                print(f"⚠️ OCR fallback used for ATS PDF: {path}")
+                ocr_text = ocr_pdf_from_path(path)
+
+                if len(ocr_text.split()) > len(text.split()):
+                    text = ocr_text
+
+            return clean_cv_text(text)
 
         if ext == ".docx":
-            return extract_docx(path)
+            text = extract_docx(path)
+            return clean_cv_text(text)
 
         if ext == ".doc":
             with open(path, "rb") as f:
                 file_bytes = f.read()
 
             tmpdir = os.path.dirname(path) or tempfile.gettempdir()
-            return (
+
+            text = (
                 try_libreoffice(path, tmpdir)
                 or try_antiword(path)
                 or try_binary_doc(file_bytes)
             )
+
+            return clean_cv_text(text)
 
         print("❌ Unsupported file type:", path)
         return ""
 
     except Exception as e:
         print("❌ Extraction error:", e)
+
+        try:
+            path = os.fspath(file_path)
+            ext = os.path.splitext(path.lower())[1]
+
+            if ext == ".pdf":
+                print(f"⚠️ Extraction failed, trying OCR: {path}")
+                return clean_cv_text(ocr_pdf_from_path(path))
+
+        except Exception as ocr_error:
+            print("OCR fallback failed:", str(ocr_error))
+
         return ""
+    
 
 
 def extract_docx(source):
@@ -111,6 +239,23 @@ def extract_docx(source):
     return table_text or para_text
 
 
+# def try_libreoffice(doc_path, tmpdir):
+#     try:
+#         subprocess.run(
+#             ["libreoffice", "--headless", "--convert-to", "docx", doc_path, "--outdir", tmpdir],
+#             capture_output=True,
+#             timeout=30,
+#         )
+#         docx_path = os.path.join(tmpdir, "input.docx")
+#         if os.path.exists(docx_path):
+#             text = extract_docx(docx_path)
+#             if text and len(text.strip()) > 50:
+#                 return text
+#     except Exception:
+#         pass
+
+#     return ""
+
 def try_libreoffice(doc_path, tmpdir):
     try:
         subprocess.run(
@@ -118,15 +263,97 @@ def try_libreoffice(doc_path, tmpdir):
             capture_output=True,
             timeout=30,
         )
-        docx_path = os.path.join(tmpdir, "input.docx")
+
+        base_name = os.path.splitext(os.path.basename(doc_path))[0]
+        docx_path = os.path.join(tmpdir, base_name + ".docx")
+
         if os.path.exists(docx_path):
             text = extract_docx(docx_path)
+
             if text and len(text.strip()) > 50:
                 return text
+
     except Exception:
         pass
 
     return ""
+
+
+# def extract_text_from_bytes(filename, file_bytes):
+#     text = ""
+#     try:
+#         # PDF
+#         if filename.lower().endswith(".pdf"):
+#             reader = PdfReader(io.BytesIO(file_bytes))
+#             for page in reader.pages:
+#                 text += (page.extract_text() or "") + "\n"
+
+#         # DOCX
+#         elif filename.lower().endswith(".docx"):
+
+#             doc = DocxDocument(io.BytesIO(file_bytes))
+
+#             for para in doc.paragraphs:
+#                 text += para.text + "\n"
+
+#         # TXT fallback
+#         else:
+#             text = file_bytes.decode("utf-8", errors="ignore")
+
+#     except Exception as e:
+#         print("extract_text_from_bytes Error:", str(e))
+
+#     return text.strip()
+
+
+def extract_text_from_bytes(filename, file_bytes):
+    text = ""
+    filename_lower = filename.lower()
+
+    try:
+        if filename_lower.endswith(".pdf"):
+            reader = PdfReader(io.BytesIO(file_bytes))
+
+            for page in reader.pages:
+                text += (page.extract_text() or "") + "\n"
+
+            text = clean_cv_text(text)
+
+            if is_text_low_quality(text):
+                print(f"⚠️ OCR fallback used for manual PDF: {filename}")
+                ocr_text = ocr_pdf_from_bytes(file_bytes)
+
+                if len(ocr_text.split()) > len(text.split()):
+                    text = ocr_text
+
+        elif filename_lower.endswith(".docx"):
+            doc = DocxDocument(io.BytesIO(file_bytes))
+
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        text += cell.text + "\n"
+
+            text = clean_cv_text(text)
+
+        else:
+            text = file_bytes.decode("utf-8", errors="ignore")
+            text = clean_cv_text(text)
+
+    except Exception as e:
+        print("extract_text_from_bytes Error:", str(e))
+
+        if filename_lower.endswith(".pdf"):
+            try:
+                print(f"⚠️ Normal extraction failed, trying OCR: {filename}")
+                text = ocr_pdf_from_bytes(file_bytes)
+            except Exception as ocr_error:
+                print("OCR fallback failed:", str(ocr_error))
+
+    return clean_cv_text(text)
 
 
 def try_antiword(doc_path):
@@ -175,39 +402,113 @@ def try_binary_doc(file_bytes):
     return result if len(result) > 50 else ""
 
 
-def clean_json(raw):
-    raw = re.sub(r"```json\s*", "", raw)
-    raw = re.sub(r"```\s*", "", raw)
+# def clean_json(raw):
+#     raw = re.sub(r"```json\s*", "", raw)
+#     raw = re.sub(r"```\s*", "", raw)
 
-    match = re.search(r"[\{\[].*[\}\]]", raw, re.DOTALL)
-    if match:
-        raw = match.group(0)
+#     match = re.search(r"[\{\[].*[\}\]]", raw, re.DOTALL)
+#     if match:
+#         raw = match.group(0)
 
-    raw = raw.replace("\n", " ").replace("\r", "")
-    raw = re.sub(r",\s*}", "}", raw)
-    raw = re.sub(r",\s*]", "]", raw)
-    raw = re.sub(r"[\x00-\x1f]", " ", raw)
+#     raw = raw.replace("\n", " ").replace("\r", "")
+#     raw = re.sub(r",\s*}", "}", raw)
+#     raw = re.sub(r",\s*]", "]", raw)
+#     raw = re.sub(r"[\x00-\x1f]", " ", raw)
 
+#     try:
+#         data = json.loads(raw)
+#     except json.JSONDecodeError:
+#         depth = 0
+#         start = raw.index("{")
+
+#         for i in range(start, len(raw)):
+#             if raw[i] == "{":
+#                 depth += 1
+#             elif raw[i] == "}":
+#                 depth -= 1
+
+#             if depth == 0:
+#                 data = json.loads(raw[start:i + 1])
+#                 break
+#         else:
+#             raise ValueError("Could not parse JSON from AI response")
+
+#     return data[0] if isinstance(data, list) else data
+
+
+def clean_json(text):
+    if not text:
+        raise ValueError("Empty AI response")
+
+    text = text.strip()
+
+    # Strip markdown code fences
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
+    text = text.strip()
+
+    # Replace smart/curly quotes with straight quotes
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    text = text.replace("\u00ab", '"').replace("\u00bb", '"')
+
+    # Extract the JSON object
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON object found in AI response")
+
+    cleaned = match.group(0)
+
+    # Remove trailing commas before } or ]
+    cleaned = re.sub(r",\s*}", "}", cleaned)
+    cleaned = re.sub(r",\s*]", "]", cleaned)
+
+    # Remove control characters (except newline/tab) that break JSON
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", cleaned)
+
+    # First attempt: try parsing as-is
     try:
-        data = json.loads(raw)
+        return json.loads(cleaned)
     except json.JSONDecodeError:
-        depth = 0
-        start = raw.index("{")
+        pass
 
-        for i in range(start, len(raw)):
-            if raw[i] == "{":
-                depth += 1
-            elif raw[i] == "}":
-                depth -= 1
+    # Second attempt: collapse newlines inside string values
+    # Replace actual newlines with escaped \\n (within strings)
+    collapsed = cleaned.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+    # Fix double-escaped newlines
+    collapsed = collapsed.replace("\\\\n", "\\n")
+    try:
+        return json.loads(collapsed)
+    except json.JSONDecodeError:
+        pass
 
-            if depth == 0:
-                data = json.loads(raw[start:i + 1])
-                break
-        else:
-            raise ValueError("Could not parse JSON from AI response")
+    # Third attempt: try to fix single quotes used as string delimiters
+    # Only do this if there are no double-quoted strings
+    if cleaned.count("'") > cleaned.count('"'):
+        single_fixed = cleaned.replace("'", '"')
+        single_fixed = re.sub(r",\s*}", "}", single_fixed)
+        single_fixed = re.sub(r",\s*]", "]", single_fixed)
+        try:
+            return json.loads(single_fixed)
+        except json.JSONDecodeError:
+            pass
 
-    return data[0] if isinstance(data, list) else data
+    # Fourth attempt: aggressive cleanup — strip everything to one line
+    oneline = re.sub(r"\s+", " ", cleaned)
+    oneline = re.sub(r",\s*}", "}", oneline)
+    oneline = re.sub(r",\s*]", "]", oneline)
+    try:
+        return json.loads(oneline)
+    except json.JSONDecodeError:
+        pass
 
+    # Final fallback: delegate to the flexible parser
+    try:
+        return clean_json_flexible(text)
+    except Exception:
+        pass
+
+    raise ValueError(f"Could not parse AI response as JSON")
 
 def clean_json_flexible(raw):
     raw = re.sub(r"```json\s*", "", raw)
@@ -426,6 +727,7 @@ def create_cv_report(results):
         rationale = data.get("rationale", "")
 
         doc.add_heading(f"{name}  —  {score}%", level=2)
+        doc.add_paragraph(f"Phone: {data.get('phone_number', 'Not found')}")
         doc.add_paragraph(f"Recommendation: {rec}")
         doc.add_paragraph(f"Rationale: {rationale}")
 

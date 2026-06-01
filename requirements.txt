@@ -9,3 +9,7 @@ authlib
 beautifulsoup4
 python-dotenv
 requests
+pytesseract
+pdf2image
+Pillow
+PyMuPDF
