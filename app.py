@@ -30,7 +30,7 @@ from integrations import (
     get_ceipal_token,
     get_ceipal_jobs,
     get_ceipal_submissions,
-    download_resume,
+    download_resume_by_token,
     send_interakt_shortlist_message,
     remove_empty_strings
 )
@@ -715,7 +715,7 @@ def manual_screen_evaluate():
 
 def process_ats_candidate(candidate, jd_text, notes, access_token):
     submission_id = candidate.get("submission_id")
-    resume_url = candidate.get("resume")
+    resume_token = candidate.get("resume_token")
 
     result = {
         "candidate_name": f"Candidate_{submission_id}",
@@ -729,14 +729,14 @@ def process_ats_candidate(candidate, jd_text, notes, access_token):
         "jd_enhancement": {},
     }
 
-    if not resume_url:
-        result["rationale"] = "No resume URL"
+    if not resume_token:
+        result["rationale"] = "No resume token"
         return result
 
     file_path = None
 
     try:
-        file_path = download_resume(resume_url, access_token)
+        file_path = download_resume_by_token(resume_token, access_token)
 
         if not file_path:
             result["rationale"] = "Resume download failed"
@@ -1021,6 +1021,45 @@ def evaluate_candidate(jd_text, cv_text, notes, candidate_id, fallback_name=None
 
 
 
+@app.route("/api/ats/view-resume", methods=["POST"])
+@login_required
+def view_ats_resume():
+    try:
+        data = request.get_json() or {}
+
+        resume_token = data.get("resume_token")
+        access_token = data.get("access_token")
+
+        if not resume_token or not access_token:
+            return jsonify({
+                "success": False,
+                "error": "Resume token or access token missing"
+            }), 400
+
+        file_path, file_name = download_resume_by_token(
+            resume_token,
+            access_token
+        )
+
+        if not file_path:
+            return jsonify({
+                "success": False,
+                "error": "Resume download failed"
+            }), 400
+
+        return send_file(
+            file_path,
+            as_attachment=False,
+            download_name=file_name
+        )
+
+    except Exception:
+        print("View Resume Error:", traceback.format_exc())
+        return jsonify({
+            "success": False,
+            "error": "Unable to open resume"
+        }), 500
+
 
 @app.route('/api/screen/ats/init', methods=['POST'])
 @login_required
@@ -1075,25 +1114,27 @@ def ats_screen_init():
         skipped_resume_missing = 0
 
         for index, c in enumerate(submissions.get("results", []), start=1):
-            resume_url = (
-                c.get("resume")
-                or c.get("resume_url")
-                or c.get("resume_file")
-                or c.get("resume_link")
-                or c.get("resume_path")
-                or c.get("document")
-                or c.get("attachment")
-                or ""
-            )
+            # resume_url = (
+            #     c.get("resume")
+            #     or c.get("resume_url")
+            #     or c.get("resume_file")
+            #     or c.get("resume_link")
+            #     or c.get("resume_path")
+            #     or c.get("document")
+            #     or c.get("attachment")
+            #     or ""
+            # )
+            resume_token = c.get("resume_token") or ""
 
-            if not resume_url:
+
+            if not resume_token:
                 skipped_resume_missing += 1
 
-                print("\n========== SKIPPING CANDIDATE: RESUME URL BLANK ==========")
-                print("Index:", index)
-                print("Submission ID:", c.get("submission_id") or c.get("id"))
-                print("Candidate:", c.get("applicant_name") or c.get("candidate_name") or c.get("job_seeker_name"))
-                print("Available Keys:", list(c.keys()))
+                print("\n========== SKIPPING CANDIDATE: RESUME TOKEN MISSING ==========")
+                # print("Index:", index)
+                # print("Submission ID:", c.get("submission_id") or c.get("id"))
+                # print("Candidate:", c.get("applicant_name") or c.get("candidate_name") or c.get("job_seeker_name"))
+                # print("Available Keys:", list(c.keys()))
 
                 continue
 
@@ -1108,8 +1149,9 @@ def ats_screen_init():
                     or c.get("job_seeker_name")
                     or f"Candidate_{c.get('submission_id') or index}"
                 ),
-                "resume": resume_url,
-                "resume_url": resume_url,
+                # "resume": resume_url,
+                # "resume_url": resume_url,
+                "resume_token": resume_token,
                 "access_token": access_token,
                 "jd_text": jd_text,
                 "notes": notes
@@ -1145,35 +1187,39 @@ def ats_evaluate_candidate():
         print("Access Token Received:", bool(access_token))
         
         submission_id = data.get("submission_id")
-        resume_url = data.get("resume") or data.get("resume_url") or ""        
+        resume_token = data.get("resume_token") or ""
         candidate_name = data.get("candidate_name") or f"Candidate_{submission_id}"
 
         result = make_default_result(submission_id, candidate_name)
 
-        result["resume_url"] = resume_url
-        result["resume"] = resume_url
+        # result["resume_url"] = resume_url
+        #result["resume"] = resume_url
 
         if not access_token:
             result["recommendation"] = "Token Missing"
             result["rationale"] = "ATS token expired. Please restart screening."
             return jsonify({"success": True, "result": result})
 
-        if not resume_url:
+        if not resume_token:
             print("\n========== RESUME MISSING ==========")
             print("Candidate:", candidate_name)
             print("Submission ID:", submission_id)
-            print("Resume URL:", resume_url)
+            print("Resume Token:", resume_token)
             result["recommendation"] = "Resume Missing"
-            result["rationale"] = "No resume URL found from ATS."
+            result["rationale"] = "Resume token is missing."
             return jsonify({"success": True, "result": result})
 
-        file_path = download_resume(resume_url, access_token)
+        # file_path = download_resume(resume_url, access_token)
 
+        file_path, downloaded_file_name = download_resume_by_token(
+            resume_token,
+            access_token
+        )
         if not file_path:
             print("\n========== RESUME DOWNLOAD FAILED ==========")
             print("Candidate:", candidate_name)
             print("Submission ID:", submission_id)
-            print("Resume URL:", resume_url)
+            print("Resume Token:", resume_token)
             result["recommendation"] = "Download Failed"
             result["rationale"] = "Resume could not be downloaded."
             return jsonify({"success": True, "result": result})
@@ -1196,8 +1242,14 @@ def ats_evaluate_candidate():
                 fallback_name=candidate_name
             )
 
-            final_result["resume_url"] = resume_url
-            final_result["resume"] = resume_url
+            # Existing fields
+# final_result["resume_url"] = resume_url
+# final_result["resume"] = resume_url
+
+# New fields for View Resume
+            final_result["resume_token"] = resume_token
+            final_result["access_token"] = access_token
+
 
             return jsonify({
                 "success": True,

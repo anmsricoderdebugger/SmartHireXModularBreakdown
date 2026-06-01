@@ -229,12 +229,12 @@ def build_prompt(jd_text, cv_text, notes, candidate_id):
 def get_ceipal_token():
     print("\n[Ceipal Auth] Initiating token request...")
 
-    url = "https://api.ceipal.com/v1/createAuthtoken"
+    url = "https://api.ceipal.com/v2/createAuthtoken"
 
     payload = {
         "email": Config.CEIPAL_EMAIL,
         "password": Config.CEIPAL_PASSWORD,
-        "api_key": Config.CEIPAL_API_KEY,
+        "apiKey": Config.CEIPAL_API_KEY,
     }
 
     headers = {
@@ -326,75 +326,129 @@ def detect_resume_extension(content_type):
 #         print("❌ Resume download error:", e)
 #         return None
 
-def download_resume(resume_url, access_token):
+# def download_resume(resume_url, access_token):
+#     try:
+
+#         print("\n========== DOWNLOADING RESUME ==========")
+#         print("Original URL:", resume_url)
+
+#         if not resume_url:
+#             print("Resume URL missing")
+#             return None
+
+#         # Preserve special chars safely
+#         safe_url = resume_url.replace(" ", "%20")
+
+#         print("Safe URL:", safe_url)
+
+#         headers = {
+#             "Authorization": f"Bearer {access_token}",
+#             "User-Agent": "Mozilla/5.0"
+#         }
+
+#         response = requests.get(
+#             safe_url,
+#             headers=headers,
+#             stream=True,
+#             timeout=60,
+#             allow_redirects=True
+#         )
+
+#         print("Download Status:", response.status_code)
+
+#         if response.status_code != 200:
+#             print(f"❌ Resume download failed: {response.status_code}")
+#             print(response.text[:1000])
+#             return None
+
+#         content_type = response.headers.get("Content-Type", "").lower()
+
+#         print("Content-Type:", content_type)
+
+#         ext = ".pdf"
+
+#         if "word" in content_type or "docx" in content_type:
+#             ext = ".docx"
+
+#         elif "msword" in content_type:
+#             ext = ".doc"
+
+#         file_name = f"resume_{uuid.uuid4().hex}{ext}"
+
+#         save_path = os.path.join("temp_resumes", file_name)
+
+#         os.makedirs("temp_resumes", exist_ok=True)
+
+#         with open(save_path, "wb") as f:
+#             for chunk in response.iter_content(chunk_size=8192):
+#                 if chunk:
+#                     f.write(chunk)
+
+#         print("✅ Resume saved:", save_path)
+
+#         return save_path
+
+#     except Exception as e:
+#         print("\n========== RESUME DOWNLOAD EXCEPTION ==========")
+#         import traceback
+#         traceback.print_exc()
+#         return None
+    
+    
+def download_resume_by_token(resume_token, access_token):
     try:
-
-        print("\n========== DOWNLOADING RESUME ==========")
-        print("Original URL:", resume_url)
-
-        if not resume_url:
-            print("Resume URL missing")
-            return None
-
-        # Preserve special chars safely
-        safe_url = resume_url.replace(" ", "%20")
-
-        print("Safe URL:", safe_url)
+        url = "https://api.ceipal.com/v2/documentDownload/"
 
         headers = {
-            "Authorization": f"Bearer {access_token}",
-            "User-Agent": "Mozilla/5.0"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}"
         }
 
-        response = requests.get(
-            safe_url,
+        payload = {
+            "resumeToken": resume_token
+        }
+
+        response = requests.post(
+            url,
             headers=headers,
-            stream=True,
-            timeout=60,
-            allow_redirects=True
+            json=payload
         )
 
-        print("Download Status:", response.status_code)
+        print("Document Download Status:", response.status_code)
+        print("Content-Type:", response.headers.get("Content-Type"))
 
         if response.status_code != 200:
-            print(f"❌ Resume download failed: {response.status_code}")
-            print(response.text[:1000])
-            return None
+            print("Document Download Failed:", response.text[:500])
+            return None, None
 
         content_type = response.headers.get("Content-Type", "").lower()
 
-        print("Content-Type:", content_type)
+        if "application/json" in content_type:
+            print("Unexpected JSON:", response.text[:500])
+            return None, None
 
         ext = ".pdf"
-
         if "word" in content_type or "docx" in content_type:
             ext = ".docx"
-
         elif "msword" in content_type:
             ext = ".doc"
 
         file_name = f"resume_{uuid.uuid4().hex}{ext}"
-
-        save_path = os.path.join("temp_resumes", file_name)
+        file_path = os.path.join("temp_resumes", file_name)
 
         os.makedirs("temp_resumes", exist_ok=True)
 
-        with open(save_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+        with open(file_path, "wb") as f:
+            f.write(response.content)
 
-        print("✅ Resume saved:", save_path)
+        return file_path, file_name
 
-        return save_path
-
-    except Exception as e:
-        print("\n========== RESUME DOWNLOAD EXCEPTION ==========")
-        import traceback
-        traceback.print_exc()
-        return None
+    except Exception:
+        print("Document Download Error:", traceback.format_exc())
+        return None, None
     
-    
+
+
 def remove_empty_strings(obj):
     if isinstance(obj, dict):
         return {k: remove_empty_strings(v) for k, v in obj.items()}
@@ -405,10 +459,10 @@ def remove_empty_strings(obj):
 
 def get_ceipal_jobs(access_token, job_code):
     try:
-        url = "https://api.ceipal.com/v1/getJobPostingsList"
+        url = "https://api.ceipal.com/v2/getJobPostingsList"
 
         params = {
-            "searchkey": f'"{job_code}"',
+            "searchKey": f'"{job_code}"',
         }
 
         headers = {
@@ -433,32 +487,75 @@ def get_ceipal_jobs(access_token, job_code):
         return None
 
 
+# def get_ceipal_submissions(access_token, job_id, screening_type):
+#     print(f"\n[Ceipal Submissions] Requesting data for Job ID: {job_id}")
+
+#     url = (
+#         f"https://api.ceipal.com/v2/getSubmissionsList"
+#         #f"?bearer%20token={access_token}&job_id={job_id}&isPipeline=1"
+#     )
+
+#     params = {
+#             "bearer token": access_token,
+#             "job_id": job_id
+#     }
+
+#     if screening_type == "pipeline":
+#             params["isPipeline"] = 1
+
+#     headers = {
+#         "Content-Type": "application/json",
+#         "Authorization": f"Bearer {access_token}",
+#     }
+
+#     try:
+#         response = requests.get(url, headers=headers, params=params)
+
+#         print(f"[Ceipal Submissions] HTTP Status Code: {response.status_code}")
+#         print(f"[Ceipal Submissions] Raw Response: {response.text[:300]}")
+
+#         if not response.text.strip():
+#             return None
+
+#         return response.json()
+
+#     except Exception:
+#         print(f"[Ceipal Submissions] ERROR: {traceback.format_exc()}")
+#         return None
+    
+
 def get_ceipal_submissions(access_token, job_id, screening_type):
     print(f"\n[Ceipal Submissions] Requesting data for Job ID: {job_id}")
 
-    url = (
-        f"https://api.ceipal.com/v1/getSubmissionsList"
-        #f"?bearer%20token={access_token}&job_id={job_id}&isPipeline=1"
-    )
-
-    params = {
-            "bearer token": access_token,
-            "job_id": job_id
-    }
-
     if screening_type == "pipeline":
-            params["isPipeline"] = 1
+        url = (
+            f"https://api.ceipal.com/v2/getSubmissionsList"
+            f"?isPipeline=1&jobId={job_id}"
+        )
+    else:
+        url = (
+            f"https://api.ceipal.com/v2/getSubmissionsList"
+            f"?jobId={job_id}"
+        )
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": f"Bearer {access_token}"
     }
 
     try:
-        response = requests.get(url, headers=headers, params=params)
+        print("Final URL:", url)
+
+        response = requests.get(
+            url,
+            headers=headers
+        )
 
         print(f"[Ceipal Submissions] HTTP Status Code: {response.status_code}")
-        print(f"[Ceipal Submissions] Raw Response: {response.text[:300]}")
+        print(f"[Ceipal Submissions] Raw Response: {response.text[:1000]}")
+
+        if response.status_code != 200:
+            return None
 
         if not response.text.strip():
             return None
@@ -468,7 +565,6 @@ def get_ceipal_submissions(access_token, job_id, screening_type):
     except Exception:
         print(f"[Ceipal Submissions] ERROR: {traceback.format_exc()}")
         return None
-    
 
 def normalize_indian_phone(phone):
     phone = str(phone or "").strip()

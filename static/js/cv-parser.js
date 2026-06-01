@@ -731,6 +731,41 @@ function sendThresholdMessages(type) {
 //     }
 // }
 
+async function viewATSResume(resume_token, access_token) {
+    if (!resume_token || !access_token) {
+        showModal("Resume Missing", "Resume token is not available.");
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/ats/view-resume", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                resume_token: resume_token,
+                access_token: access_token
+            })
+        });
+
+        if (!response.ok) {
+            showModal("Resume Error", "Unable to open resume.");
+            return;
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        window.open(url, "_blank");
+
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+    } catch (err) {
+        showModal("Resume Error", err.message);
+    }
+}
+
 
 async function downloadATSReport() {
 
@@ -1240,8 +1275,7 @@ async function runCVScreeningATS(screeningType) {
             body: JSON.stringify({
                 submission_id: candidate.submission_id,
                 candidate_name: candidate.candidate_name,
-                resume: candidate.resume,
-                resume_url: candidate.resume_url,
+                resume_token: candidate.resume_token,
                 access_token: candidate.access_token,
                 jd_text: candidate.jd_text,
                 notes: candidate.notes
@@ -1421,7 +1455,7 @@ async function promisePool(items, limit, worker) {
 
 function renderCVCard(d, container, type) {
     console.log("TTTTTTTTT"+type);
-    const resumeUrl=d.resume_url || d.resume || "";
+    const resumeToken=d.resume_token || "";
     const score = Number(d.overallScore || 0);
     const phone = d.phone_number || d.phone || d.mobile || "";
     const fit = fitLabel(score);
@@ -1463,8 +1497,8 @@ function renderCVCard(d, container, type) {
 
 
                 <div class="card-right-actions">
-                    ${resumeUrl ? `
-                        <button class="view-resume-btn" onclick="window.open('${resumeUrl}', '_blank')">
+                    ${resumeToken ? `
+                        <button class="view-resume-btn" onclick="viewATSResume('${d.resume_token || ""}', '${d.access_token || ""}')">
                             View Resume
                         </button>
                     ` : `
